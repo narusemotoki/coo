@@ -11,6 +11,8 @@ env_logger = "0.8.4"
 gio = "0.9.1"
 glib = "0.10.3"
 log = "0.4.14"
+shellexpand = "2.1.0"
+toml = "0.5.8"
 
 [dependencies.gtk]
 version = "0.9.2"
