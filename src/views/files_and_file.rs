@@ -133,8 +133,28 @@ impl FilesAndFile {
         return a.clone();
     }
 
+    fn build_go_parent_button(&self) -> gtk::Button {
+        let go_parent_button = gtk::Button::with_label("D ..");
+        go_parent_button.connect_clicked(glib::clone!(@weak self as this => move |_| {
+            {
+                let mut p = this.get_ext().path.borrow_mut();
+                let new_path = format!("{}{}{}", p.as_ref().unwrap(), path::MAIN_SEPARATOR, "..");
+                p.replace(new_path);
+            }
+            this.reload_files();
+        }));
+        let label = go_parent_button
+            .get_child()
+            .unwrap()
+            .downcast::<gtk::Label>()
+            .unwrap();
+        label.set_xalign(0.0);
+        return go_parent_button;
+    }
+
     fn build_filer(&self, path: &str) -> gtk::ListBox {
         let list_box = gtk::ListBox::new();
+        list_box.add(&self.build_go_parent_button());
 
         for entry in list_files(path) {
             let button = gtk::Button::with_label(&match entry.type_ {
