@@ -17,6 +17,16 @@ fn bootstrap(application: &gtk::Application) {
 
     let config = fs::read_to_string(expand_path("~/.config/coo.toml")).unwrap();
     let value = config.parse::<toml::Value>().unwrap();
+
+    let css = include_str!("resources/coo.css").replace("{font}", value["font"].as_str().unwrap());
+    let css_provider = gtk::CssProvider::new();
+    css_provider.load_from_data(css.as_bytes()).unwrap();
+    gtk::StyleContext::add_provider_for_screen(
+        &gdk::Screen::get_default().expect("CSSプロバイダの初期化に失敗しました。"),
+        &css_provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
     let root = value["views"][0]["config"]["root"].as_str().unwrap();
     let files_and_file = views::files_and_file::FilesAndFile::new(&expand_path(root));
 
