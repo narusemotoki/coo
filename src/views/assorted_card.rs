@@ -1,6 +1,5 @@
 use chrono::prelude::*;
 use gio::prelude::*;
-use glib::translate::{FromGlibPtrFull, ToGlib, ToGlibPtr};
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use std::cell;
@@ -8,14 +7,11 @@ use std::fs;
 use std::io::prelude::*;
 use std::rc;
 
+#[derive(Debug, Default)]
 pub struct ViewExt {
     widget: cell::RefCell<gtk::Grid>,
     path: cell::RefCell<Option<String>>,
 }
-
-static PROPERTIES: [glib::subclass::Property; 1] = [glib::subclass::Property("path", |path| {
-    glib::ParamSpec::string(path, "Path", "Path", None, glib::ParamFlags::READWRITE)
-})];
 
 #[derive(Debug, serde::Serialize)]
 struct Card {
@@ -75,7 +71,7 @@ fn build_text_view(date: chrono::NaiveDate, save_factory: Save) -> gtk::TextView
         .hexpand(true)
         .wrap_mode(gtk::WrapMode::Char)
         .build();
-    let buffer = text_view.get_buffer().unwrap();
+    let buffer = text_view.buffer().unwrap();
     let last = rc::Rc::new(cell::Cell::new(chrono::Utc::now()));
     let dration_in_seconds = 1;
     let auto_save_skip_duration = chrono::Duration::seconds(dration_in_seconds as i64);
@@ -93,8 +89,8 @@ fn build_text_view(date: chrono::NaiveDate, save_factory: Save) -> gtk::TextView
                 log::debug!("最終入力から十分に時間が経過していないので、保存処理を省略します。");
                 return;
             }
-            let (start, end) = buffer.get_bounds();
-            let text = buffer.get_text(&start, &end, false).unwrap().to_string();
+            let (start, end) = buffer.bounds();
+            let text = buffer.text(&start, &end, false).unwrap().to_string();
             let content =
                 toml::to_string_pretty(&DailyBucket::new(date, vec![Card::new(text, false)]))
                     .unwrap();
@@ -141,7 +137,7 @@ fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactor
         .build();
     list_box.connect_add(|list_box, _| {
         // ListBoxRowをフォーカス不可にしないと、ListBoxにaddしたTextViewが選択後即座にフォーカスを失います。
-        for child in list_box.get_children() {
+        for child in list_box.children() {
             child.set_can_focus(false);
         }
     });
@@ -151,7 +147,7 @@ fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactor
         .expand(true)
         .build();
     list_box.add(&hbox);
-    hbox.add(&gtk::Label::with_mnemonic(Some("📝")));
+    hbox.add(&gtk::Label::with_mnemonic("📝"));
     hbox.add(&build_text_view(date, save_factory(date)));
 
     let scrolled_window = gtk::ScrolledWindowBuilder::new().build();
@@ -160,17 +156,12 @@ fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactor
 
     vbox
 }
-impl glib::subclass::types::ObjectSubclass for ViewExt {
+
+#[glib::object_subclass]
+impl ObjectSubclass for ViewExt {
     const NAME: &'static str = "AssortedCard";
+    type Type = View;
     type ParentType = gtk::Bin;
-    type Instance = glib::subclass::simple::InstanceStruct<Self>;
-    type Class = glib::subclass::simple::ClassStruct<Self>;
-
-    glib::glib_object_subclass!();
-
-    fn class_init(klass: &mut Self::Class) {
-        klass.install_properties(&PROPERTIES);
-    }
 
     fn new() -> Self {
         let grid = gtk::Grid::new();
@@ -184,52 +175,55 @@ impl glib::subclass::types::ObjectSubclass for ViewExt {
     }
 }
 
-impl gtk::subclass::bin::BinImpl for ViewExt {}
-impl gtk::subclass::container::ContainerImpl for ViewExt {}
-impl gtk::subclass::widget::WidgetImpl for ViewExt {}
+impl BinImpl for ViewExt {}
+impl ContainerImpl for ViewExt {}
+impl WidgetImpl for ViewExt {}
 
-impl glib::subclass::object::ObjectImpl for ViewExt {
-    glib::glib_object_impl!();
-
-    fn constructed(&self, obj: &glib::Object) {
+impl ObjectImpl for ViewExt {
+    fn constructed(&self, obj: &Self::Type) {
         self.parent_constructed(obj);
-        let self_ = obj.downcast_ref::<View>().unwrap();
+
         let p = self.widget.borrow();
-        self_.add(&p.clone());
+        obj.add(&p.clone().upcast::<gtk::Widget>());
     }
 
-    fn set_property(&self, _obj: &glib::Object, id: usize, value: &glib::Value) {
-        let prop = &PROPERTIES[id];
+    fn properties() -> &'static [glib::ParamSpec] {
+        static PROPERTIES: once_cell::sync::Lazy<Vec<glib::ParamSpec>> =
+            once_cell::sync::Lazy::new(|| {
+                vec![glib::ParamSpec::new_string(
+                    "path",
+                    "Path",
+                    "Path",
+                    None,
+                    glib::ParamFlags::READWRITE,
+                )]
+            });
 
-        match *prop {
-            glib::subclass::Property("path", ..) => {
-                let path = value.get().expect(
-                    "assorted_card::ViewExtのset_propertyに渡されたpathの型が期待と違います。",
-                );
-                self.path.replace(path);
-            }
-            _ => unimplemented!(),
+        PROPERTIES.as_ref()
+    }
+
+    fn set_property(
+        &self,
+        _obj: &Self::Type,
+        _id: usize,
+        value: &glib::Value,
+        pspec: &glib::ParamSpec,
+    ) {
+        if pspec.name() == "path" {
+            self.path.replace(value.get().unwrap());
         }
     }
 }
 
-glib::glib_wrapper! {
-    pub struct View(
-        Object<glib::subclass::simple::InstanceStruct<ViewExt>,
-        glib::subclass::simple::ClassStruct<ViewExt>,
-        ViewClass>)
-        @extends gtk::Widget, gtk::Container, gtk::Bin;
-    match fn {
-        get_type => || ViewExt::get_type().to_glib(),
-    }
+glib::wrapper! {
+    pub struct View(ObjectSubclass<ViewExt>)
+        @extends gtk::Widget, gtk::Container, gtk::Bin, gtk::Window, gtk::ApplicationWindow;
 }
 
 impl View {
     pub fn new(path: &str) -> Self {
-        let this: View = glib::Object::new(Self::static_type(), &[("path", &path)])
-            .expect("assorted_card::Viewの作成に失敗しました。")
-            .downcast()
-            .expect("assorted_card::Viewの型が間違っています。");
+        let this = glib::Object::new(&[("path", &path)])
+            .expect("assorted_card::Viewの作成に失敗しました。");
 
         let ext = ViewExt::from_instance(&this);
         let grid = ext.widget.borrow().clone().downcast::<gtk::Grid>().unwrap();

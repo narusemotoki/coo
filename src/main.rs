@@ -20,10 +20,8 @@ impl ViewsIterator {
         match view_config["component"].as_str().unwrap() {
             "assorted_card" => views::assorted_card::View::new(&coo::libs::expand_path(root))
                 .upcast::<gtk::Widget>(),
-            "files_and_file" => {
-                views::files_and_file::FilesAndFile::new(&coo::libs::expand_path(root))
-                    .upcast::<gtk::Widget>()
-            }
+            "files_and_file" => views::files_and_file::View::new(&coo::libs::expand_path(root))
+                .upcast::<gtk::Widget>(),
             _ => panic!(),
         }
     }
@@ -81,7 +79,7 @@ fn bootstrap(application: &gtk::Application) {
     let css_provider = gtk::CssProvider::new();
     css_provider.load_from_data(css.as_bytes()).unwrap();
     gtk::StyleContext::add_provider_for_screen(
-        &gdk::Screen::get_default().expect("CSSプロバイダの初期化に失敗しました。"),
+        &gdk::Screen::default().expect("CSSプロバイダの初期化に失敗しました。"),
         &css_provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
@@ -91,8 +89,7 @@ fn bootstrap(application: &gtk::Application) {
 
 fn main() {
     env_logger::init();
-    let application = gtk::Application::new(Some("com.varwww.coo"), Default::default())
-        .expect("Cooを起動できません。");
+    let application = gtk::Application::new(Some("com.varwww.coo"), Default::default());
     application.connect_activate(bootstrap);
-    application.run(&[]);
+    application.run();
 }

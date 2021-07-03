@@ -1,5 +1,4 @@
 use gio::prelude::*;
-use glib::translate::{FromGlibPtrFull, ToGlib, ToGlibPtr};
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use std::cell;
@@ -36,26 +35,16 @@ fn list_files<P: AsRef<path::Path>>(path: P) -> Vec<FileEntry> {
         .collect()
 }
 
-pub struct FilesAndFileExt {
+pub struct ViewExt {
     widget: cell::RefCell<gtk::Paned>,
     path: cell::RefCell<Option<String>>,
 }
 
-static PROPERTIES: [glib::subclass::Property; 1] = [glib::subclass::Property("path", |path| {
-    glib::ParamSpec::string(path, "Path", "Path", None, glib::ParamFlags::READWRITE)
-})];
-
-impl glib::subclass::types::ObjectSubclass for FilesAndFileExt {
+#[glib::object_subclass]
+impl ObjectSubclass for ViewExt {
     const NAME: &'static str = "FilesAndFile";
+    type Type = View;
     type ParentType = gtk::Bin;
-    type Instance = glib::subclass::simple::InstanceStruct<Self>;
-    type Class = glib::subclass::simple::ClassStruct<Self>;
-
-    glib::glib_object_subclass!();
-
-    fn class_init(klass: &mut Self::Class) {
-        klass.install_properties(&PROPERTIES);
-    }
 
     fn new() -> Self {
         let panel = gtk::Paned::new(gtk::Orientation::Horizontal);
@@ -71,60 +60,63 @@ impl glib::subclass::types::ObjectSubclass for FilesAndFileExt {
     }
 }
 
-impl gtk::subclass::bin::BinImpl for FilesAndFileExt {}
-impl gtk::subclass::container::ContainerImpl for FilesAndFileExt {}
-impl gtk::subclass::widget::WidgetImpl for FilesAndFileExt {}
+impl BinImpl for ViewExt {}
+impl ContainerImpl for ViewExt {}
+impl WidgetImpl for ViewExt {}
 
-impl glib::subclass::object::ObjectImpl for FilesAndFileExt {
-    glib::glib_object_impl!();
-
-    fn constructed(&self, obj: &glib::Object) {
+impl ObjectImpl for ViewExt {
+    fn constructed(&self, obj: &Self::Type) {
         self.parent_constructed(obj);
-        let self_ = obj.downcast_ref::<FilesAndFile>().unwrap();
+
         let p = self.widget.borrow();
-        self_.add(&p.clone());
+        obj.add(&p.clone());
     }
 
-    fn set_property(&self, _obj: &glib::Object, id: usize, value: &glib::Value) {
-        let prop = &PROPERTIES[id];
+    fn properties() -> &'static [glib::ParamSpec] {
+        static PROPERTIES: once_cell::sync::Lazy<Vec<glib::ParamSpec>> =
+            once_cell::sync::Lazy::new(|| {
+                vec![glib::ParamSpec::new_string(
+                    "path",
+                    "Path",
+                    "Path",
+                    None,
+                    glib::ParamFlags::READWRITE,
+                )]
+            });
 
-        match *prop {
-            glib::subclass::Property("path", ..) => {
-                let path = value
-                    .get()
-                    .expect("FilesAndFileExtのset_propertyに渡されたpathの型が期待と違います。");
-                self.path.replace(path);
-            }
-            _ => unimplemented!(),
+        PROPERTIES.as_ref()
+    }
+
+    fn set_property(
+        &self,
+        _obj: &Self::Type,
+        _id: usize,
+        value: &glib::Value,
+        pspec: &glib::ParamSpec,
+    ) {
+        if pspec.name() == "path" {
+            self.path.replace(value.get().unwrap());
         }
     }
 }
 
-glib::glib_wrapper! {
-    pub struct FilesAndFile(
-        Object<glib::subclass::simple::InstanceStruct<FilesAndFileExt>,
-        glib::subclass::simple::ClassStruct<FilesAndFileExt>,
-        FilesAndFileClass>)
-        @extends gtk::Widget, gtk::Container, gtk::Bin;
-    match fn {
-        get_type => || FilesAndFileExt::get_type().to_glib(),
-    }
+glib::wrapper! {
+    pub struct View(ObjectSubclass<ViewExt>)
+        @extends gtk::Widget, gtk::Container, gtk::Bin, gtk::Window, gtk::ApplicationWindow;
 }
 
-impl FilesAndFile {
+impl View {
     pub fn new(path: &str) -> Self {
-        let this: FilesAndFile = glib::Object::new(Self::static_type(), &[("path", &path)])
-            .expect("FilesAndFileの作成に失敗しました。")
-            .downcast()
-            .expect("FilesAndFileの型が間違っています。");
+        let this: Self = glib::Object::new(&[("path", &path)])
+            .expect("files_and_file::Viewの作成に失敗しました。");
 
         this.reload_files();
 
         this
     }
 
-    fn get_ext(&self) -> &FilesAndFileExt {
-        FilesAndFileExt::from_instance(self)
+    fn get_ext(&self) -> &ViewExt {
+        ViewExt::from_instance(self)
     }
 
     fn get_paned(&self) -> gtk::Paned {
@@ -145,7 +137,7 @@ impl FilesAndFile {
             this.reload_files();
         }));
         let label = go_parent_button
-            .get_child()
+            .child()
             .unwrap()
             .downcast::<gtk::Label>()
             .unwrap();
@@ -181,11 +173,7 @@ impl FilesAndFile {
                     }
                 };
             }));
-            let label = button
-                .get_child()
-                .unwrap()
-                .downcast::<gtk::Label>()
-                .unwrap();
+            let label = button.child().unwrap().downcast::<gtk::Label>().unwrap();
             label.set_xalign(0.0);
             list_box.add(&button);
         }
@@ -196,7 +184,7 @@ impl FilesAndFile {
 
     fn replace_paned_child1(&self, scrolled_window: &gtk::ScrolledWindow) {
         let paned = self.get_paned();
-        if let Some(widget) = paned.get_child1() {
+        if let Some(widget) = paned.child1() {
             paned.remove(&widget);
         }
         paned.add1(scrolled_window);
@@ -205,7 +193,7 @@ impl FilesAndFile {
 
     fn replace_paned_child2(&self, scrolled_window: &gtk::Box) {
         let paned = self.get_paned();
-        if let Some(widget) = paned.get_child2() {
+        if let Some(widget) = paned.child2() {
             paned.remove(&widget);
         }
 
@@ -228,7 +216,7 @@ impl FilesAndFile {
         let scrolled_window =
             gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
         let text_view = gtk::TextView::new();
-        text_view.get_buffer().unwrap().set_text(&content);
+        text_view.buffer().unwrap().set_text(&content);
 
         scrolled_window.add(&text_view);
 
@@ -237,9 +225,9 @@ impl FilesAndFile {
 
         let p = path.to_string();
         save_button.connect_clicked(move |_| {
-            let buffer = text_view.get_buffer().unwrap();
-            let (start, end) = buffer.get_bounds();
-            let text = buffer.get_text(&start, &end, false).unwrap().to_string();
+            let buffer = text_view.buffer().unwrap();
+            let (start, end) = buffer.bounds();
+            let text = buffer.text(&start, &end, false).unwrap().to_string();
             log::debug!("保存内容: {}", text);
             let mut file = fs::File::create(&p).unwrap();
             file.write_all(text.as_bytes()).unwrap();
