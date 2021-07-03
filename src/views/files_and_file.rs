@@ -120,7 +120,7 @@ impl FilesAndFile {
 
         this.reload_files();
 
-        return this;
+        this
     }
 
     fn get_ext(&self) -> &FilesAndFileExt {
@@ -130,7 +130,8 @@ impl FilesAndFile {
     fn get_paned(&self) -> gtk::Paned {
         let ext = self.get_ext();
         let a = ext.widget.borrow();
-        return a.clone();
+
+        a.clone()
     }
 
     fn build_go_parent_button(&self) -> gtk::Button {
@@ -149,7 +150,8 @@ impl FilesAndFile {
             .downcast::<gtk::Label>()
             .unwrap();
         label.set_xalign(0.0);
-        return go_parent_button;
+
+        go_parent_button
     }
 
     fn build_filer(&self, path: &str) -> gtk::ListBox {
@@ -189,16 +191,13 @@ impl FilesAndFile {
         }
         list_box.set_selection_mode(gtk::SelectionMode::None);
 
-        return list_box;
+        list_box
     }
 
     fn replace_paned_child1(&self, scrolled_window: &gtk::ScrolledWindow) {
         let paned = self.get_paned();
-        match paned.get_child1() {
-            Some(widget) => {
-                paned.remove(&widget);
-            }
-            None => {}
+        if let Some(widget) = paned.get_child1() {
+            paned.remove(&widget);
         }
         paned.add1(scrolled_window);
         paned.show_all();
@@ -206,12 +205,10 @@ impl FilesAndFile {
 
     fn replace_paned_child2(&self, scrolled_window: &gtk::Box) {
         let paned = self.get_paned();
-        match paned.get_child2() {
-            Some(widget) => {
-                paned.remove(&widget);
-            }
-            None => {}
+        if let Some(widget) = paned.get_child2() {
+            paned.remove(&widget);
         }
+
         paned.add2(scrolled_window);
         paned.show_all();
     }
@@ -242,7 +239,7 @@ impl FilesAndFile {
         save_button.connect_clicked(move |_| {
             let buffer = text_view.get_buffer().unwrap();
             let (start, end) = buffer.get_bounds();
-            let text = buffer.get_text(&start, &end, true).unwrap().to_string();
+            let text = buffer.get_text(&start, &end, false).unwrap().to_string();
             log::debug!("保存内容: {}", text);
             let mut file = fs::File::create(&p).unwrap();
             file.write_all(text.as_bytes()).unwrap();
