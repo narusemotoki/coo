@@ -15,13 +15,13 @@ pub struct ViewExt {
 
 #[derive(Debug, serde::Serialize)]
 struct Card {
+    key: String,
     text: String,
-    is_completed: bool,
 }
 
 impl Card {
-    fn new(text: String, is_completed: bool) -> Self {
-        Self { text, is_completed }
+    fn new(key: String, text: String) -> Self {
+        Self { key, text }
     }
 }
 
@@ -66,7 +66,7 @@ fn weekday_to_japanese(weekday: chrono::Weekday) -> String {
     .to_string()
 }
 
-fn build_text_view(date: chrono::NaiveDate, save_factory: Save) -> gtk::TextView {
+fn build_text_view(save: Save) -> gtk::TextView {
     let text_view = gtk::TextViewBuilder::new()
         .hexpand(true)
         .wrap_mode(gtk::WrapMode::Char)
@@ -76,50 +76,75 @@ fn build_text_view(date: chrono::NaiveDate, save_factory: Save) -> gtk::TextView
     let dration_in_seconds = 1;
     let auto_save_skip_duration = chrono::Duration::seconds(dration_in_seconds as i64);
     let sleep_duration = std::time::Duration::from_secs(dration_in_seconds);
-    let save_factory = std::sync::Arc::new(save_factory);
-    buffer.connect_changed(move |buffer| {
+    let save = std::sync::Arc::new(save);
+    buffer.connect_changed(move |_buffer| {
         let now = chrono::Utc::now();
         last.replace(now);
         let last = last.clone();
-        let buffer = buffer.clone();
-        let save_factory = save_factory.clone();
+        let save = save.clone();
         glib::MainContext::default().spawn_local(async move {
             async_std::task::sleep(sleep_duration).await;
             if last.get() + auto_save_skip_duration > chrono::Utc::now() {
                 log::debug!("最終入力から十分に時間が経過していないので、保存処理を省略します。");
                 return;
             }
-            let (start, end) = buffer.bounds();
-            let text = buffer.text(&start, &end, false).unwrap().to_string();
-            let content =
-                toml::to_string_pretty(&DailyBucket::new(date, vec![Card::new(text, false)]))
-                    .unwrap();
-            save_factory(content);
+            save();
         });
     });
 
     text_view
 }
 
-type Save = Box<dyn Fn(String)>;
-type SaveFactory = Box<dyn Fn(chrono::NaiveDate) -> Save>;
-
-fn save_factory_factory(root: String) -> SaveFactory {
-    let f = move |date: chrono::NaiveDate| -> Save {
-        let root = root.clone();
-        let f = move |content: String| {
+type Save = Box<dyn Fn()>;
+type SaveFactory = Box<dyn Fn(chrono::NaiveDate, &gtk::ListBox) -> Save>;
+fn save_column_factory_factory(root: &str) -> SaveFactory {
+    let root = root.to_string();
+    Box::new(
+        move |date: chrono::NaiveDate, list_box: &gtk::ListBox| -> Save {
             let dir = coo::libs::expand_path(&format!("{}/{}", &root, &date.format("%Y/%Y-%m")));
-            fs::create_dir_all(&dir).unwrap();
-
             let dest = format!("{}/{}.toml", &dir, &date.format("%Y-%m-%d"));
-            log::debug!("保存先: {}, 保存内容:\n{}", &dest, &content);
-            let mut file = fs::File::create(&dest).unwrap();
-            file.write_all(content.as_bytes()).unwrap();
-            file.flush().unwrap();
-        };
-        Box::new(f)
-    };
-    Box::new(f)
+            fs::create_dir_all(&dir).unwrap();
+            let list_box = list_box.clone();
+
+            Box::new(move || {
+                let mut cards: Vec<Card> = vec![];
+                for child in list_box.children() {
+                    let row = child.downcast::<gtk::ListBoxRow>().unwrap();
+                    let box_ = row.child().unwrap().downcast::<gtk::Box>().unwrap();
+
+                    let box_children = box_.children();
+                    let combo_box_text = box_children
+                        .get(0)
+                        .unwrap()
+                        .clone()
+                        .downcast::<gtk::ComboBoxText>()
+                        .unwrap();
+                    let key = CARD_KEYS
+                        .get(combo_box_text.active().unwrap() as usize)
+                        .unwrap()
+                        .to_string();
+
+                    let text_view = box_children
+                        .get(1)
+                        .unwrap()
+                        .clone()
+                        .downcast::<gtk::TextView>()
+                        .unwrap();
+                    let text_buffer = text_view.buffer().unwrap();
+                    let (start, end) = text_buffer.bounds();
+                    let text = text_buffer.text(&start, &end, false).unwrap().to_string();
+
+                    cards.push(Card::new(text, key));
+                }
+
+                let content = toml::to_string_pretty(&DailyBucket::new(date, cards)).unwrap();
+                log::debug!("保存先: {}, 保存内容:\n{}", &dest, &content);
+                let mut file = fs::File::create(&dest).unwrap();
+                file.write_all(content.as_bytes()).unwrap();
+                file.flush().unwrap();
+            })
+        },
+    )
 }
 
 fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
@@ -147,8 +172,13 @@ fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactor
         .expand(true)
         .build();
     list_box.add(&hbox);
-    hbox.add(&gtk::Label::with_mnemonic("📝"));
-    hbox.add(&build_text_view(date, save_factory(date)));
+    let combo_box_text = gtk::ComboBoxTextBuilder::new().build();
+    for key in CARD_KEYS {
+        combo_box_text.append_text(key);
+    }
+    combo_box_text.set_active(Some(0));
+    hbox.add(&combo_box_text);
+    hbox.add(&build_text_view(save_factory(date, &list_box)));
 
     let scrolled_window = gtk::ScrolledWindowBuilder::new().build();
     scrolled_window.add(&list_box);
@@ -156,6 +186,8 @@ fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactor
 
     vbox
 }
+
+static CARD_KEYS: &[&str] = &["📝", "✅", "⭕", "❌", "➕", "➖"];
 
 #[glib::object_subclass]
 impl ObjectSubclass for ViewExt {
@@ -227,7 +259,7 @@ impl View {
 
         let ext = ViewExt::from_instance(&this);
         let grid = ext.widget.borrow().clone().downcast::<gtk::Grid>().unwrap();
-        let save_factory = std::sync::Arc::new(save_factory_factory(path.to_string()));
+        let save_factory = std::sync::Arc::new(save_column_factory_factory(path));
 
         let calendar = gtk::CalendarBuilder::new().expand(true).build();
         calendar.set_display_options(
