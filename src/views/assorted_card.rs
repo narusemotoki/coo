@@ -13,6 +13,41 @@ pub struct ViewExt {
     path: cell::RefCell<Option<String>>,
 }
 
+impl ViewExt {
+    fn load_daily_bucket(&self, date: chrono::NaiveDate) -> DailyBucket {
+        let mut daily_bucket = DailyBucket {
+            version: 1,
+            date,
+            cards: vec![],
+        };
+        let path = self.path.borrow();
+        let path = path.as_ref();
+        match path {
+            Some(path) => {
+                let dir = coo::libs::expand_path(&format!("{}/{}", path, &date.format("%Y/%Y-%m")));
+                let source = format!("{}/{}.toml", &dir, &date.format("%Y-%m-%d"));
+                match fs::read_to_string(source) {
+                    Ok(file) => {
+                        let v = file.parse::<toml::Value>().unwrap();
+                        daily_bucket.cards = v["cards"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|source| Card {
+                                key: source["key"].as_str().unwrap().to_string(),
+                                text: source["text"].as_str().unwrap().to_string(),
+                            })
+                            .collect();
+                        daily_bucket
+                    }
+                    _ => daily_bucket,
+                }
+            }
+            _ => daily_bucket,
+        }
+    }
+}
+
 #[derive(Debug, serde::Serialize)]
 struct Card {
     key: String,
@@ -134,7 +169,7 @@ fn save_column_factory_factory(root: &str) -> SaveFactory {
                     let (start, end) = text_buffer.bounds();
                     let text = text_buffer.text(&start, &end, false).unwrap().to_string();
 
-                    cards.push(Card::new(text, key));
+                    cards.push(Card::new(key, text));
                 }
 
                 let content = toml::to_string_pretty(&DailyBucket::new(date, cards)).unwrap();
@@ -147,13 +182,17 @@ fn save_column_factory_factory(root: &str) -> SaveFactory {
     )
 }
 
-fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
+fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
     let vbox = gtk::BoxBuilder::new()
         .orientation(gtk::Orientation::Vertical)
         .expand(true)
         .build();
 
-    let title = format!("{}日 ({})", date.day(), weekday_to_japanese(date.weekday()));
+    let title = format!(
+        "{}日 ({})",
+        daily_bucket.date.day(),
+        weekday_to_japanese(daily_bucket.date.weekday())
+    );
     vbox.add(&gtk::Label::new(Some(&title)));
 
     let list_box = gtk::ListBoxBuilder::new()
@@ -167,18 +206,27 @@ fn build_column(date: chrono::NaiveDate, save_factory: std::sync::Arc<SaveFactor
         }
     });
 
-    let hbox = gtk::BoxBuilder::new()
-        .orientation(gtk::Orientation::Horizontal)
-        .expand(true)
-        .build();
-    list_box.add(&hbox);
-    let combo_box_text = gtk::ComboBoxTextBuilder::new().build();
-    for key in CARD_KEYS {
-        combo_box_text.append_text(key);
+    for card in daily_bucket.cards {
+        let hbox = gtk::BoxBuilder::new()
+            .orientation(gtk::Orientation::Horizontal)
+            .expand(true)
+            .build();
+        list_box.add(&hbox);
+        let combo_box_text = gtk::ComboBoxTextBuilder::new().build();
+        for key in CARD_KEYS {
+            combo_box_text.append_text(key);
+        }
+        let index = CARD_KEYS
+            .iter()
+            .position(|&key| key == card.key)
+            .unwrap_or(0) as u32;
+        combo_box_text.set_active(Some(index));
+        hbox.add(&combo_box_text);
+
+        let text_view = build_text_view(save_factory(daily_bucket.date, &list_box));
+        text_view.buffer().unwrap().set_text(&card.text);
+        hbox.add(&text_view);
     }
-    combo_box_text.set_active(Some(0));
-    hbox.add(&combo_box_text);
-    hbox.add(&build_text_view(save_factory(date, &list_box)));
 
     let scrolled_window = gtk::ScrolledWindowBuilder::new().build();
     scrolled_window.add(&list_box);
@@ -277,7 +325,7 @@ impl View {
         {
             grid.attach(
                 &build_column(
-                    sunday + chrono::Duration::days(i as i64),
+                    ext.load_daily_bucket(sunday + chrono::Duration::days(i as i64)),
                     save_factory.clone(),
                 ),
                 *left,
