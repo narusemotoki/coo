@@ -101,17 +101,18 @@ fn weekday_to_japanese(weekday: chrono::Weekday) -> String {
     .to_string()
 }
 
-fn build_text_view(save: Save) -> gtk::TextView {
+fn build_text_view(text: &str, save: std::sync::Arc<Save>) -> gtk::TextView {
     let text_view = gtk::TextViewBuilder::new()
         .hexpand(true)
         .wrap_mode(gtk::WrapMode::Char)
         .build();
     let buffer = text_view.buffer().unwrap();
+    buffer.set_text(text);
+
     let last = rc::Rc::new(cell::Cell::new(chrono::Utc::now()));
     let dration_in_seconds = 1;
     let auto_save_skip_duration = chrono::Duration::seconds(dration_in_seconds as i64);
     let sleep_duration = std::time::Duration::from_secs(dration_in_seconds);
-    let save = std::sync::Arc::new(save);
     buffer.connect_changed(move |_buffer| {
         let now = chrono::Utc::now();
         last.replace(now);
@@ -165,11 +166,7 @@ fn save_column_factory_factory(root: &str) -> SaveFactory {
                         .clone()
                         .downcast::<gtk::TextView>()
                         .unwrap();
-                    let text_buffer = text_view.buffer().unwrap();
-                    let (start, end) = text_buffer.bounds();
-                    let text = text_buffer.text(&start, &end, false).unwrap().to_string();
-
-                    cards.push(Card::new(key, text));
+                    cards.push(Card::new(key, read_all(&text_view)));
                 }
 
                 let content = toml::to_string_pretty(&DailyBucket::new(date, cards)).unwrap();
@@ -180,6 +177,42 @@ fn save_column_factory_factory(root: &str) -> SaveFactory {
             })
         },
     )
+}
+
+fn read_all(text_view: &gtk::TextView) -> String {
+    let text_buffer = text_view.buffer().unwrap();
+    let (start, end) = text_buffer.bounds();
+    text_buffer.text(&start, &end, false).unwrap().to_string()
+}
+
+fn build_row(card: Option<Card>, save: std::sync::Arc<Save>) -> gtk::Box {
+    let hbox = gtk::BoxBuilder::new()
+        .orientation(gtk::Orientation::Horizontal)
+        .expand(true)
+        .build();
+
+    let combo_box_text = gtk::ComboBoxTextBuilder::new().build();
+    for key in CARD_KEYS {
+        combo_box_text.append_text(key);
+    }
+    let index = match card {
+        Some(ref card) => CARD_KEYS
+            .iter()
+            .position(|&key| key == card.key)
+            .unwrap_or(0) as u32,
+        None => 0,
+    };
+
+    combo_box_text.set_active(Some(index));
+    hbox.add(&combo_box_text);
+
+    let text = match card {
+        Some(ref card) => &card.text,
+        _ => "",
+    };
+    hbox.add(&build_text_view(text, save));
+
+    hbox
 }
 
 fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
@@ -206,27 +239,12 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
         }
     });
 
+    let save = std::sync::Arc::new(save_factory(daily_bucket.date, &list_box));
     for card in daily_bucket.cards {
-        let hbox = gtk::BoxBuilder::new()
-            .orientation(gtk::Orientation::Horizontal)
-            .expand(true)
-            .build();
-        list_box.add(&hbox);
-        let combo_box_text = gtk::ComboBoxTextBuilder::new().build();
-        for key in CARD_KEYS {
-            combo_box_text.append_text(key);
-        }
-        let index = CARD_KEYS
-            .iter()
-            .position(|&key| key == card.key)
-            .unwrap_or(0) as u32;
-        combo_box_text.set_active(Some(index));
-        hbox.add(&combo_box_text);
-
-        let text_view = build_text_view(save_factory(daily_bucket.date, &list_box));
-        text_view.buffer().unwrap().set_text(&card.text);
-        hbox.add(&text_view);
+        let row = build_row(Some(card), save.clone());
+        list_box.add(&row);
     }
+    list_box.add(&build_row(None, save.clone()));
 
     let scrolled_window = gtk::ScrolledWindowBuilder::new().build();
     scrolled_window.add(&list_box);
