@@ -13,6 +13,9 @@ pub struct ViewExt {
     path: cell::RefCell<Option<String>>,
 }
 
+static WIDGET_NAME_CARD_TEXT: &str = "card-text";
+static WIDGET_NAME_CARD_KEY: &str = "card-key";
+
 impl ViewExt {
     fn load_daily_bucket(&self, date: chrono::NaiveDate) -> DailyBucket {
         let mut daily_bucket = DailyBucket {
@@ -103,6 +106,7 @@ fn weekday_to_japanese(weekday: chrono::Weekday) -> String {
 
 fn build_text_view(text: &str, save: std::sync::Arc<Save>) -> gtk::TextView {
     let text_view = gtk::TextViewBuilder::new()
+        .name(WIDGET_NAME_CARD_TEXT)
         .hexpand(true)
         .wrap_mode(gtk::WrapMode::Char)
         .build();
@@ -145,27 +149,18 @@ fn save_column_factory_factory(root: &str) -> SaveFactory {
             Box::new(move || {
                 let mut cards: Vec<Card> = vec![];
                 for child in list_box.children() {
-                    let row = child.downcast::<gtk::ListBoxRow>().unwrap();
-                    let box_ = row.child().unwrap().downcast::<gtk::Box>().unwrap();
+                    let combo_box_text = coo::libs::find_first_child_by_name::<gtk::ComboBoxText>(
+                        &child,
+                        WIDGET_NAME_CARD_KEY,
+                    )
+                    .unwrap();
+                    let text_view =
+                        coo::libs::find_first_child_by_name(&child, WIDGET_NAME_CARD_TEXT).unwrap();
 
-                    let box_children = box_.children();
-                    let combo_box_text = box_children
-                        .get(0)
-                        .unwrap()
-                        .clone()
-                        .downcast::<gtk::ComboBoxText>()
-                        .unwrap();
                     let key = CARD_KEYS
                         .get(combo_box_text.active().unwrap() as usize)
                         .unwrap()
                         .to_string();
-
-                    let text_view = box_children
-                        .get(1)
-                        .unwrap()
-                        .clone()
-                        .downcast::<gtk::TextView>()
-                        .unwrap();
                     cards.push(Card::new(key, read_all(&text_view)));
                 }
 
@@ -191,7 +186,9 @@ fn build_row(card: Option<Card>, save: std::sync::Arc<Save>) -> gtk::Box {
         .expand(true)
         .build();
 
-    let combo_box_text = gtk::ComboBoxTextBuilder::new().build();
+    let combo_box_text = gtk::ComboBoxTextBuilder::new()
+        .name(WIDGET_NAME_CARD_KEY)
+        .build();
     for key in CARD_KEYS {
         combo_box_text.append_text(key);
     }
