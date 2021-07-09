@@ -11,7 +11,10 @@ pub fn find_first_child_by_name<T: glib::IsA<gtk::Widget>>(
     find_first_widget_by_name(parent, name).and_then(|widget| widget.downcast().ok())
 }
 
-fn find_first_widget_by_name(parent: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+fn find_first_widget_by_name<T: glib::IsA<gtk::Widget>>(
+    parent: &T,
+    name: &str,
+) -> Option<gtk::Widget> {
     if let Ok(container) = parent.clone().dynamic_cast::<gtk::Container>() {
         for child in container.children() {
             if child.widget_name() == name {

@@ -176,6 +176,10 @@ fn save_column_factory_factory(root: &str) -> SaveFactory {
 
 fn read_all(text_view: &gtk::TextView) -> String {
     let text_buffer = text_view.buffer().unwrap();
+    read_all_text_buffer(&text_buffer)
+}
+
+fn read_all_text_buffer(text_buffer: &gtk::TextBuffer) -> String {
     let (start, end) = text_buffer.bounds();
     text_buffer.text(&start, &end, false).unwrap().to_string()
 }
@@ -229,14 +233,87 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
         .expand(true)
         .selection_mode(gtk::SelectionMode::None)
         .build();
-    list_box.connect_add(|list_box, _| {
+
+    let save = std::sync::Arc::new(save_factory(daily_bucket.date, &list_box));
+    let cloned_save = save.clone();
+    // すべてのListBoxRowにフォーカス不可を設定するために、最初の要素をListBoxにaddする前に、このconnectをしなければなりません。
+    list_box.connect_add(move |list_box, row| {
         // ListBoxRowをフォーカス不可にしないと、ListBoxにaddしたTextViewが選択後即座にフォーカスを失います。
         for child in list_box.children() {
-            child.set_can_focus(false);
+            let current_row = &child
+                .clone()
+                .downcast::<gtk::ListBoxRow>()
+                .unwrap()
+                .child()
+                .unwrap();
+            if current_row == row {
+                child.set_can_focus(false);
+                break;
+            }
+        }
+
+        let text_view =
+            coo::libs::find_first_child_by_name::<gtk::TextView>(row, WIDGET_NAME_CARD_TEXT)
+                .unwrap();
+        {
+            let list_box = list_box.clone();
+            text_view.connect_focus_out_event(move |_, _| {
+                log::debug!("TextViewがフォーカスを失ったイベントのシグナル");
+                let last = list_box
+                    .children()
+                    .last()
+                    .unwrap()
+                    .clone()
+                    .downcast::<gtk::ListBoxRow>()
+                    .unwrap();
+                for child in list_box.children() {
+                    if child == last {
+                        return gtk::Inhibit(false);
+                    }
+                    if read_all(
+                        &coo::libs::find_first_child_by_name::<gtk::TextView>(
+                            &child,
+                            WIDGET_NAME_CARD_TEXT,
+                        )
+                        .unwrap(),
+                    )
+                    .is_empty()
+                    {
+                        list_box.remove(&child);
+                        list_box.show_all();
+                    }
+                }
+                gtk::Inhibit(false)
+            });
+        }
+
+        let save = cloned_save.clone();
+        {
+            let list_box = list_box.clone();
+            let row = row.clone();
+            text_view.buffer().unwrap().connect_changed(move |buffer| {
+                log::debug!("TextBufferの変更シグナル");
+                let last_row = list_box
+                    .children()
+                    .last()
+                    .unwrap()
+                    .clone()
+                    .downcast::<gtk::ListBoxRow>()
+                    .unwrap()
+                    .child()
+                    .unwrap();
+                if last_row != row {
+                    return;
+                }
+                if !read_all_text_buffer(buffer).is_empty() {
+                    let row = build_row(None, save.clone());
+                    list_box.add(&row);
+                    list_box.show_all();
+                }
+            });
         }
     });
 
-    let save = std::sync::Arc::new(save_factory(daily_bucket.date, &list_box));
     for card in daily_bucket.cards {
         let row = build_row(Some(card), save.clone());
         list_box.add(&row);
