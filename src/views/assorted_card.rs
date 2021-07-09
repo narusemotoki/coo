@@ -216,6 +216,20 @@ fn build_row(card: Option<Card>, save: std::sync::Arc<Save>) -> gtk::Box {
     hbox
 }
 
+fn delete_empty_rows_except_last(list_box: &gtk::ListBox) {
+    if let Some((_, sub_children)) = list_box.children().split_last() {
+        for child in sub_children {
+            let text_view =
+                coo::libs::find_first_child_by_name::<gtk::TextView>(child, WIDGET_NAME_CARD_TEXT)
+                    .unwrap();
+            if read_all(&text_view).is_empty() {
+                list_box.remove(child);
+                break;
+            }
+        }
+    }
+}
+
 fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
     let vbox = gtk::BoxBuilder::new()
         .orientation(gtk::Orientation::Vertical)
@@ -259,30 +273,7 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
             let list_box = list_box.clone();
             text_view.connect_focus_out_event(move |_, _| {
                 log::debug!("TextViewがフォーカスを失ったイベントのシグナル");
-                let last = list_box
-                    .children()
-                    .last()
-                    .unwrap()
-                    .clone()
-                    .downcast::<gtk::ListBoxRow>()
-                    .unwrap();
-                for child in list_box.children() {
-                    if child == last {
-                        return gtk::Inhibit(false);
-                    }
-                    if read_all(
-                        &coo::libs::find_first_child_by_name::<gtk::TextView>(
-                            &child,
-                            WIDGET_NAME_CARD_TEXT,
-                        )
-                        .unwrap(),
-                    )
-                    .is_empty()
-                    {
-                        list_box.remove(&child);
-                        list_box.show_all();
-                    }
-                }
+                delete_empty_rows_except_last(&list_box);
                 gtk::Inhibit(false)
             });
         }
@@ -316,7 +307,7 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
 
     for card in daily_bucket.cards {
         if card.text.is_empty() {
-            continue
+            continue;
         }
         let row = build_row(Some(card), save.clone());
         list_box.add(&row);
