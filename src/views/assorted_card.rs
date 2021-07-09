@@ -105,6 +105,18 @@ fn weekday_to_japanese(weekday: chrono::Weekday) -> String {
     .to_string()
 }
 
+fn find_card(widget: &gtk::Widget) -> Option<gtk::Box> {
+    coo::libs::find_first_child_by_name(widget, WIDGET_NAME_CARD)
+}
+
+fn find_card_text(widget: &gtk::Widget) -> Option<gtk::TextView> {
+    coo::libs::find_first_child_by_name(widget, WIDGET_NAME_CARD_TEXT)
+}
+
+fn find_card_key(widget: &gtk::Widget) -> Option<gtk::ComboBoxText> {
+    coo::libs::find_first_child_by_name(widget, WIDGET_NAME_CARD_KEY)
+}
+
 fn build_text_view(text: &str, save: std::sync::Arc<Save>) -> gtk::TextView {
     let text_view = gtk::TextViewBuilder::new()
         .name(WIDGET_NAME_CARD_TEXT)
@@ -150,19 +162,11 @@ fn save_column_factory_factory(root: &str) -> SaveFactory {
             Box::new(move || {
                 let mut cards: Vec<Card> = vec![];
                 for child in list_box.children() {
-                    let combo_box_text = coo::libs::find_first_child_by_name::<gtk::ComboBoxText>(
-                        &child,
-                        WIDGET_NAME_CARD_KEY,
-                    )
-                    .unwrap();
-                    let text_view =
-                        coo::libs::find_first_child_by_name(&child, WIDGET_NAME_CARD_TEXT).unwrap();
-
                     let key = CARD_KEYS
-                        .get(combo_box_text.active().unwrap() as usize)
+                        .get(find_card_key(&child).unwrap().active().unwrap() as usize)
                         .unwrap()
                         .to_string();
-                    cards.push(Card::new(key, read_all(&text_view)));
+                    cards.push(Card::new(key, read_all(&find_card_text(&child).unwrap())));
                 }
 
                 let content = toml::to_string_pretty(&DailyBucket::new(date, cards)).unwrap();
@@ -221,9 +225,7 @@ fn build_row(card: Option<Card>, save: std::sync::Arc<Save>) -> gtk::Box {
 fn delete_empty_rows_except_last(list_box: &gtk::ListBox) {
     if let Some((_, sub_children)) = list_box.children().split_last() {
         for child in sub_children {
-            let text_view =
-                coo::libs::find_first_child_by_name::<gtk::TextView>(child, WIDGET_NAME_CARD_TEXT)
-                    .unwrap();
+            let text_view = find_card_text(child).unwrap();
             if read_all(&text_view).is_empty() {
                 list_box.remove(child);
                 break;
@@ -234,10 +236,7 @@ fn delete_empty_rows_except_last(list_box: &gtk::ListBox) {
 
 fn add_row_if_last_is_not_empty(list_box: &gtk::ListBox, save: std::sync::Arc<Save>) {
     let children = list_box.children();
-    let last_row = children.last().unwrap();
-    let text_view =
-        coo::libs::find_first_child_by_name::<gtk::TextView>(last_row, WIDGET_NAME_CARD_TEXT)
-            .unwrap();
+    let text_view = find_card_text(children.last().unwrap()).unwrap();
     if !read_all(&text_view).is_empty() {
         let row = build_row(None, save.clone());
         list_box.add(&row);
@@ -251,17 +250,14 @@ fn on_row_added_to_list_box_factory(
     Box::new(move |list_box: &gtk::ListBox, row: &gtk::Widget| {
         // ListBoxRowをフォーカス不可にしないと、ListBoxにaddしたTextViewが選択後即座にフォーカスを失います。
         for child in list_box.children() {
-            let current_row =
-                coo::libs::find_first_child_by_name::<gtk::Box>(&child, WIDGET_NAME_CARD).unwrap();
-            if &current_row == row {
+            let current_card = find_card(&child).unwrap();
+            if &current_card == row {
                 child.set_can_focus(false);
                 break;
             }
         }
 
-        let text_view =
-            coo::libs::find_first_child_by_name::<gtk::TextView>(row, WIDGET_NAME_CARD_TEXT)
-                .unwrap();
+        let text_view = find_card_text(row).unwrap();
         {
             let list_box = list_box.clone();
             text_view.connect_focus_out_event(move |_, _| {
