@@ -315,6 +315,9 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
     });
 
     for card in daily_bucket.cards {
+        if card.text.is_empty() {
+            continue
+        }
         let row = build_row(Some(card), save.clone());
         list_box.add(&row);
     }
