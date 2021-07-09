@@ -15,6 +15,7 @@ pub struct ViewExt {
 
 static WIDGET_NAME_CARD_TEXT: &str = "card-text";
 static WIDGET_NAME_CARD_KEY: &str = "card-key";
+static WIDGET_NAME_ROW: &str = "row";
 
 impl ViewExt {
     fn load_daily_bucket(&self, date: chrono::NaiveDate) -> DailyBucket {
@@ -186,6 +187,7 @@ fn read_all_text_buffer(text_buffer: &gtk::TextBuffer) -> String {
 
 fn build_row(card: Option<Card>, save: std::sync::Arc<Save>) -> gtk::Box {
     let hbox = gtk::BoxBuilder::new()
+        .name(WIDGET_NAME_ROW)
         .orientation(gtk::Orientation::Horizontal)
         .expand(true)
         .build();
@@ -267,13 +269,9 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
     list_box.connect_add(move |list_box, row| {
         // ListBoxRowをフォーカス不可にしないと、ListBoxにaddしたTextViewが選択後即座にフォーカスを失います。
         for child in list_box.children() {
-            let current_row = &child
-                .clone()
-                .downcast::<gtk::ListBoxRow>()
-                .unwrap()
-                .child()
-                .unwrap();
-            if current_row == row {
+            let current_row =
+                coo::libs::find_first_child_by_name::<gtk::Box>(&child, WIDGET_NAME_ROW).unwrap();
+            if &current_row == row {
                 child.set_can_focus(false);
                 break;
             }
@@ -302,11 +300,9 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
     });
 
     for card in daily_bucket.cards {
-        if card.text.is_empty() {
-            continue;
+        if !card.text.is_empty() {
+            list_box.add(&build_row(Some(card), save.clone()));
         }
-        let row = build_row(Some(card), save.clone());
-        list_box.add(&row);
     }
     list_box.add(&build_row(None, save.clone()));
 
