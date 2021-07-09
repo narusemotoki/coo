@@ -230,6 +230,19 @@ fn delete_empty_rows_except_last(list_box: &gtk::ListBox) {
     }
 }
 
+fn add_row_if_last_is_not_empty(list_box: &gtk::ListBox, save: std::sync::Arc<Save>) {
+    let children = list_box.children();
+    let last_row = children.last().unwrap();
+    let text_view =
+        coo::libs::find_first_child_by_name::<gtk::TextView>(last_row, WIDGET_NAME_CARD_TEXT)
+            .unwrap();
+    if !read_all(&text_view).is_empty() {
+        let row = build_row(None, save.clone());
+        list_box.add(&row);
+        list_box.show_all();
+    }
+}
+
 fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
     let vbox = gtk::BoxBuilder::new()
         .orientation(gtk::Orientation::Vertical)
@@ -278,29 +291,12 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
             });
         }
 
-        let save = cloned_save.clone();
         {
             let list_box = list_box.clone();
-            let row = row.clone();
-            text_view.buffer().unwrap().connect_changed(move |buffer| {
+            let save = cloned_save.clone();
+            text_view.buffer().unwrap().connect_changed(move |_| {
                 log::debug!("TextBufferの変更シグナル");
-                let last_row = list_box
-                    .children()
-                    .last()
-                    .unwrap()
-                    .clone()
-                    .downcast::<gtk::ListBoxRow>()
-                    .unwrap()
-                    .child()
-                    .unwrap();
-                if last_row != row {
-                    return;
-                }
-                if !read_all_text_buffer(buffer).is_empty() {
-                    let row = build_row(None, save.clone());
-                    list_box.add(&row);
-                    list_box.show_all();
-                }
+                add_row_if_last_is_not_empty(&list_box, save.clone());
             });
         }
     });
