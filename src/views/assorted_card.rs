@@ -15,7 +15,7 @@ pub struct ViewExt {
 
 static WIDGET_NAME_CARD_TEXT: &str = "card-text";
 static WIDGET_NAME_CARD_KEY: &str = "card-key";
-static WIDGET_NAME_ROW: &str = "row";
+static WIDGET_NAME_CARD: &str = "card";
 
 impl ViewExt {
     fn load_daily_bucket(&self, date: chrono::NaiveDate) -> DailyBucket {
@@ -187,7 +187,7 @@ fn read_all_text_buffer(text_buffer: &gtk::TextBuffer) -> String {
 
 fn build_row(card: Option<Card>, save: std::sync::Arc<Save>) -> gtk::Box {
     let hbox = gtk::BoxBuilder::new()
-        .name(WIDGET_NAME_ROW)
+        .name(WIDGET_NAME_CARD)
         .orientation(gtk::Orientation::Horizontal)
         .expand(true)
         .build();
@@ -245,32 +245,14 @@ fn add_row_if_last_is_not_empty(list_box: &gtk::ListBox, save: std::sync::Arc<Sa
     }
 }
 
-fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
-    let vbox = gtk::BoxBuilder::new()
-        .orientation(gtk::Orientation::Vertical)
-        .expand(true)
-        .build();
-
-    let title = format!(
-        "{}日 ({})",
-        daily_bucket.date.day(),
-        weekday_to_japanese(daily_bucket.date.weekday())
-    );
-    vbox.add(&gtk::Label::new(Some(&title)));
-
-    let list_box = gtk::ListBoxBuilder::new()
-        .expand(true)
-        .selection_mode(gtk::SelectionMode::None)
-        .build();
-
-    let save = std::sync::Arc::new(save_factory(daily_bucket.date, &list_box));
-    let cloned_save = save.clone();
-    // すべてのListBoxRowにフォーカス不可を設定するために、最初の要素をListBoxにaddする前に、このconnectをしなければなりません。
-    list_box.connect_add(move |list_box, row| {
+fn on_row_added_to_list_box_factory(
+    save: std::sync::Arc<Save>,
+) -> Box<dyn Fn(&gtk::ListBox, &gtk::Widget)> {
+    Box::new(move |list_box: &gtk::ListBox, row: &gtk::Widget| {
         // ListBoxRowをフォーカス不可にしないと、ListBoxにaddしたTextViewが選択後即座にフォーカスを失います。
         for child in list_box.children() {
             let current_row =
-                coo::libs::find_first_child_by_name::<gtk::Box>(&child, WIDGET_NAME_ROW).unwrap();
+                coo::libs::find_first_child_by_name::<gtk::Box>(&child, WIDGET_NAME_CARD).unwrap();
             if &current_row == row {
                 child.set_can_focus(false);
                 break;
@@ -291,13 +273,36 @@ fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFact
 
         {
             let list_box = list_box.clone();
-            let save = cloned_save.clone();
+            let save = save.clone();
             text_view.buffer().unwrap().connect_changed(move |_| {
                 log::debug!("TextBufferの変更シグナル");
                 add_row_if_last_is_not_empty(&list_box, save.clone());
             });
         }
-    });
+    })
+}
+
+fn build_column(daily_bucket: DailyBucket, save_factory: std::sync::Arc<SaveFactory>) -> gtk::Box {
+    let vbox = gtk::BoxBuilder::new()
+        .orientation(gtk::Orientation::Vertical)
+        .expand(true)
+        .build();
+
+    let title = format!(
+        "{}日 ({})",
+        daily_bucket.date.day(),
+        weekday_to_japanese(daily_bucket.date.weekday())
+    );
+    vbox.add(&gtk::Label::new(Some(&title)));
+
+    let list_box = gtk::ListBoxBuilder::new()
+        .expand(true)
+        .selection_mode(gtk::SelectionMode::None)
+        .build();
+
+    let save = std::sync::Arc::new(save_factory(daily_bucket.date, &list_box));
+    // すべてのListBoxRowにフォーカス不可を設定するために、最初の要素をListBoxにaddする前に、このconnectをしなければなりません。
+    list_box.connect_add(on_row_added_to_list_box_factory(save.clone()));
 
     for card in daily_bucket.cards {
         if !card.text.is_empty() {
