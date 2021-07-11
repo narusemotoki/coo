@@ -90,6 +90,7 @@ fn build_text_view(text: &str, save: std::sync::Arc<Save>) -> gtk::TextView {
         .hexpand(true)
         .wrap_mode(gtk::WrapMode::Char)
         .build();
+    text_view.style_context().add_class("card-text");
     let buffer = text_view.buffer().unwrap();
     buffer.set_text(text);
 
@@ -166,6 +167,7 @@ fn build_row(card: Option<Card>, save: sync::Arc<Save>) -> gtk::Box {
     let combo_box_text = gtk::ComboBoxTextBuilder::new()
         .name(WIDGET_NAME_CARD_KEY)
         .build();
+    combo_box_text.style_context().add_class("card-key");
     for key in CARD_KEYS {
         combo_box_text.append_text(key);
     }

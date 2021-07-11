@@ -1,3 +1,11 @@
-* {
+.card-text {
     font: 18px "{font}";
+}
+
+.card-key {
+    margin-right: 4px;
+}
+
+.card-key .combo {
+    padding: 0 4px;
 }
