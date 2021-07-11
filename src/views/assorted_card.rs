@@ -283,7 +283,7 @@ fn build_column(daily_bucket: DailyBucket, save_factory: sync::Arc<SaveFactory>)
     vbox
 }
 
-static CARD_KEYS: &[&str] = &["📝", "✅", "⭕", "❌", "➕", "➖"];
+static CARD_KEYS: &[&str] = &["📝", "🔲", "✅", "📅"];
 
 #[glib::object_subclass]
 impl ObjectSubclass for ViewExt {
