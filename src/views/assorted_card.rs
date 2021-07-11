@@ -48,10 +48,10 @@ impl DailyBucket {
     }
 }
 
-fn compute_last_sunday(today: chrono::NaiveDate) -> chrono::NaiveDate {
+fn compute_last_monday(today: chrono::NaiveDate) -> chrono::NaiveDate {
     for i in 1..7 {
         let date = today - chrono::Duration::days(i);
-        if date.weekday() == chrono::Weekday::Sun {
+        if date.weekday() == chrono::Weekday::Mon {
             return date;
         }
     }
@@ -408,7 +408,7 @@ impl View {
         let date = ext.date.borrow();
         let iso_week = date.iso_week();
         let title = format!("{}年第{}週", iso_week.year(), iso_week.week());
-        let start_of_week = compute_last_sunday(*date);
+        let start_of_week = compute_last_monday(*date);
         let end_of_week = start_of_week + chrono::Duration::days(6);
         let subtitle = format!(
             "{} ~ {}",
@@ -446,7 +446,7 @@ impl View {
         scrolled_window.add(&self.build_week_column());
         grid.attach(&scrolled_window, 0, 0, 1, 1);
 
-        let sunday = compute_last_sunday(*ext.date.borrow());
+        let sunday = compute_last_monday(*ext.date.borrow());
         for (i, (left, top)) in vec![(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1), (3, 1)]
             .iter()
             .enumerate()
