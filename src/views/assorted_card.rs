@@ -7,10 +7,21 @@ use std::fs;
 use std::io::prelude::*;
 use std::rc;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ViewExt {
+    date: cell::RefCell<chrono::NaiveDate>,
     widget: cell::RefCell<gtk::Grid>,
-    path: cell::RefCell<Option<String>>,
+    path: cell::RefCell<String>,
+}
+
+impl Default for ViewExt {
+    fn default() -> Self {
+        Self {
+            date: cell::RefCell::new(chrono::Local::today().naive_local()),
+            widget: cell::RefCell::new(gtk::Grid::new()),
+            path: cell::RefCell::new(".".to_string()),
+        }
+    }
 }
 
 static WIDGET_NAME_CARD_TEXT: &str = "card-text";
@@ -24,31 +35,71 @@ impl ViewExt {
             date,
             cards: vec![],
         };
-        let path = self.path.borrow();
-        let path = path.as_ref();
-        match path {
-            Some(path) => {
-                let dir = coo::libs::expand_path(&format!("{}/{}", path, &date.format("%Y/%Y-%m")));
-                let source = format!("{}/{}.toml", &dir, &date.format("%Y-%m-%d"));
-                match fs::read_to_string(source) {
-                    Ok(file) => {
-                        let v = file.parse::<toml::Value>().unwrap();
-                        daily_bucket.cards = v["cards"]
-                            .as_array()
-                            .unwrap()
-                            .iter()
-                            .map(|source| Card {
-                                key: source["key"].as_str().unwrap().to_string(),
-                                text: source["text"].as_str().unwrap().to_string(),
-                            })
-                            .collect();
-                        daily_bucket
-                    }
-                    _ => daily_bucket,
-                }
+        let dir = coo::libs::expand_path(&format!(
+            "{}/{}",
+            self.path.borrow(),
+            &date.format("%Y/%Y-%m")
+        ));
+        let source = format!("{}/{}.toml", &dir, &date.format("%Y-%m-%d"));
+        match fs::read_to_string(source) {
+            Ok(file) => {
+                let v = file.parse::<toml::Value>().unwrap();
+                daily_bucket.cards = v["cards"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|source| Card {
+                        key: source["key"].as_str().unwrap().to_string(),
+                        text: source["text"].as_str().unwrap().to_string(),
+                    })
+                    .collect();
+                daily_bucket
             }
             _ => daily_bucket,
         }
+    }
+
+    fn reload_root_grid(&self, date: chrono::NaiveDate) {
+        let grid = self
+            .widget
+            .borrow()
+            .clone()
+            .downcast::<gtk::Grid>()
+            .unwrap();
+
+        for child in grid.children() {
+            grid.remove(&child)
+        }
+
+        let save_factory = std::sync::Arc::new(save_column_factory_factory(&self.path.borrow()));
+
+        let calendar = gtk::CalendarBuilder::new().expand(true).build();
+        calendar.set_display_options(
+            gtk::CalendarDisplayOptions::SHOW_WEEK_NUMBERS
+                | gtk::CalendarDisplayOptions::SHOW_HEADING,
+        );
+        let scrolled_window = gtk::ScrolledWindowBuilder::new().build();
+        scrolled_window.add(&calendar);
+        grid.attach(&scrolled_window, 0, 0, 1, 1);
+
+        let sunday = compute_last_sunday(date);
+        for (i, (left, top)) in vec![(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1), (3, 1)]
+            .iter()
+            .enumerate()
+        {
+            grid.attach(
+                &build_column(
+                    self.load_daily_bucket(sunday + chrono::Duration::days(i as i64)),
+                    save_factory.clone(),
+                ),
+                *left,
+                *top,
+                1,
+                1,
+            );
+        }
+
+        grid.show_all();
     }
 }
 
@@ -328,8 +379,9 @@ impl ObjectSubclass for ViewExt {
         grid.set_row_spacing(4);
 
         Self {
+            date: cell::RefCell::new(chrono::Local::today().naive_local()),
             widget: cell::RefCell::new(grid),
-            path: cell::RefCell::new(None),
+            path: cell::RefCell::new(".".to_string()),
         }
     }
 }
@@ -384,35 +436,7 @@ impl View {
         let this = glib::Object::new(&[("path", &path)])
             .expect("assorted_card::Viewの作成に失敗しました。");
 
-        let ext = ViewExt::from_instance(&this);
-        let grid = ext.widget.borrow().clone().downcast::<gtk::Grid>().unwrap();
-        let save_factory = std::sync::Arc::new(save_column_factory_factory(path));
-
-        let calendar = gtk::CalendarBuilder::new().expand(true).build();
-        calendar.set_display_options(
-            gtk::CalendarDisplayOptions::SHOW_WEEK_NUMBERS
-                | gtk::CalendarDisplayOptions::SHOW_HEADING,
-        );
-        let scrolled_window = gtk::ScrolledWindowBuilder::new().build();
-        scrolled_window.add(&calendar);
-        grid.attach(&scrolled_window, 0, 0, 1, 1);
-
-        let sunday = compute_last_sunday(chrono::Local::today().naive_local());
-        for (i, (left, top)) in vec![(1, 0), (2, 0), (3, 0), (0, 1), (1, 1), (2, 1), (3, 1)]
-            .iter()
-            .enumerate()
-        {
-            grid.attach(
-                &build_column(
-                    ext.load_daily_bucket(sunday + chrono::Duration::days(i as i64)),
-                    save_factory.clone(),
-                ),
-                *left,
-                *top,
-                1,
-                1,
-            );
-        }
+        ViewExt::from_instance(&this).reload_root_grid(chrono::Local::today().naive_local());
 
         this
     }
